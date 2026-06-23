@@ -27,6 +27,11 @@ def main() -> None:
         help="URL of an externally managed backend (external mode)",
     )
     parser.add_argument(
+        "--api-key",
+        help="API key for the external backend (e.g., NVIDIA API key). "
+             "Can also be set via environment variable NVIDIA_API_KEY.",
+    )
+    parser.add_argument(
         "--backend",
         choices=["llamaserver", "llamafile", "ollama", "vllm"],
         help="Backend type. Required for managed mode; in external mode use "
@@ -45,7 +50,7 @@ def main() -> None:
         help="Context budget mode (default: backend)",
     )
     parser.add_argument("--budget-tokens", type=int, help="Manual token budget")
-    parser.add_argument("--extra-flags", nargs="*", help="Additional backend CLI flags")
+    parser.add_argument("--extra-flags", nargs=argparse.REMAINDER, help="Additional backend CLI flags")
     parser.add_argument(
         "--backend-protocol",
         choices=["openai", "anthropic"],
@@ -133,6 +138,7 @@ def main() -> None:
         backend_protocol=args.backend_protocol,
         backend_timeout=args.backend_timeout,
         reasoning_replay=args.reasoning_replay,
+        api_key=args.api_key,
     )
 
     def _shutdown(sig: int, _frame: object) -> None:
