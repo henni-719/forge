@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
+import threading
 import time
 from collections.abc import Callable
 from enum import Enum
@@ -67,6 +68,9 @@ class ServerManager:
         self._current_cache_type_v: str | None = None
         self._current_n_slots: int | None = None
         self._current_kv_unified: bool = False
+        #新增：用于管理日志读取线程
+        self._stdout_thread: threading.Thread |  None = None
+        self._stderr_thread: threading.Thread |  None = None
 
     # ── start / stop ────────────────────────────────────────────
 
@@ -185,6 +189,8 @@ class ServerManager:
                 "999",
                 "--port",
                 str(self._port),
+                "--host",
+                "0.0.0.0"
             ]
             if mode == "native":
                 cmd.append("--jinja")
@@ -209,6 +215,8 @@ class ServerManager:
                 "999",
                 "--port",
                 str(self._port),
+                "--host",
+                "0.0.0.0"
             ]
             if mode == "native":
                 cmd.append("--jinja")
@@ -231,15 +239,23 @@ class ServerManager:
                 str(model_path),
                 "--port",
                 str(self._port),
+                "--host",
+                "0.0.0.0"
             ]
             if extra_flags:
                 cmd.extend(extra_flags)
             if ctx_override is not None:
                 cmd.extend(["--max-model-len", str(ctx_override)])
 
+        #把日志输出到console
+        print(f"start-cmd:{cmd}")
         self._proc = subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,text=True,bufsize=1
         )
+        
+        self._start_log_reader()
+        
+        
         await self._wait_healthy()
 
         self._current_model = model
@@ -250,6 +266,38 @@ class ServerManager:
         self._current_cache_type_v = cache_type_v
         self._current_n_slots = n_slots
         self._current_kv_unified = kv_unified
+
+    def _start_log_reader(self) -> None:
+        if self._proc is None or self._proc.stdout is None or self._proc.stderr is None:
+            return
+        self._stdout_thread= threading.Thread(
+            target=self._read_stream,
+            args=(self._proc.stdout,"STDOUT"),
+            daemon=True
+        )
+        self._stderr_thread= threading.Thread(
+            target=self._read_stream,
+            args=(self._proc.stderr,"STDERR"),
+            daemon=True
+        )
+        
+        self._stdout_thread.start()
+        self._stderr_thread.start()
+    
+    
+    def _read_stream(self,stream:Any,label:str) -> None:
+        try:
+            for line in stream:
+                print(f"[{label}] . {line.rstrip()}")
+        except Exception:
+            pass
+    
+    def _stop_log_reader(self) -> None:
+        if self._stdout_thread and self._stdout_thread.is_alive():
+            self._stdout_thread.join(timeout=1)
+            
+        if self._stderr_thread and self._stderr_thread.is_alive():
+            self._stderr_thread.join(timeout=1) 
 
     async def stop(self) -> None:
         """Stop the current server / unload the Ollama model."""
@@ -269,6 +317,8 @@ class ServerManager:
             except subprocess.TimeoutExpired:
                 self._proc.kill()
                 self._proc.wait()
+            
+            self._stop_log_reader()
             self._proc = None
             self._current_model = None
             self._current_mode = None

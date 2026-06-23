@@ -128,7 +128,7 @@ For multi-step workflows, multi-turn conversations, and backend auto-management,
 
 Drop-in proxy that sits between any client and a local model server, speaking both the OpenAI chat-completions API and the Anthropic Messages API (`/v1/messages`). Point your client at the proxy (e.g. `http://localhost:8081/v1`) and forge applies its guardrails transparently — the client thinks it's talking to a smarter model.
 
-This is the path for **using forge with an existing harness** (opencode, Continue, aider, Cline, anything that speaks the OpenAI chat-completions schema — or Claude Code, which speaks the Anthropic Messages API). No Python rewrite. Reasoning replay defaults to `none`: Forge still captures reasoning for observability, but keeps it out of backend-facing history on later turns — the most token-efficient policy, and statistically indistinguishable from replay-all on the eval suite (see [reasoning-replay results](docs/results/raw/reasoning-replay.md)). Use `--reasoning-replay keep-last` to replay only the latest reasoning block, or `--reasoning-replay full` for the historical replay-all behavior.
+This is the path for **using forge with an existing harness** (opencode, Continue, aider, Cline, anything that speaks the OpenAI chat-completions schema — or Claude Code, which speaks the Anthropic Messages API). No Python rewrite.
 
 ```bash
 # External mode — you manage the backend, forge proxies it
@@ -187,16 +187,26 @@ You can run the forge proxy as a Docker container.
 
 ```bash
 docker build -t forge-proxy .
+#add llama-server
+docker build -f Dockerfile_lamacpp -t  forge-proxy-llamacpp .
 ```
 
 **Run the container:**
 
 ```bash
 # Connect to an external backend (e.g. vLLM hosted on the same machine)
-docker run -p 8081:8081 forge-proxy --backend-url http://host.docker.internal:8000 --backend vllm --budget-mode manual --budget-tokens 8192
+docker run -p 8081:8081 forge-proxy --backend-url http://host.docker.internal:8000 --backend vllm --api-key <API-KEY> --budget-tokens 8192
+#or use froge-proxy-llamacpp
+docker run -p 8081:8081 forge-proxy-llamacpp --backend-url http://host.docker.internal:8000 --backend vllm --api-key <API-KEY> --budget-tokens 8192
+
+#use llamaserver and expose llama-server port 8080 mtp
+docker run -p 8081:8081 -p 8080:8080 -v <GGUF_PATH>:<GGUF_PATH> forge-proxy-llamacpp --backend llamaserver --gguf <GGUF_PATH>/model.gguf --extra-flags --spec-type dtraft-mtp --spec-draft-n-max 2 -t 16 --spec-draft-p-min 0.75 --cache-type-k q8_0 --cache-type-v q8_0 -c 65536
+
 ```
 
 Note: If your backend is running on `localhost` of the host machine, use `http://host.docker.internal:PORT` (on macOS/Windows) or the host's IP address to allow the container to reach it.
+
+
 
 ## Backends
 
